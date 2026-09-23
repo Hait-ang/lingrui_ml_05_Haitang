@@ -10,6 +10,7 @@ import torch
 from torch.utils.data import TensorDataset,DataLoader
 import torch.nn as nn
 import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
 
 class TitanicModel(nn.Module):
     def __init__(self):
@@ -141,101 +142,53 @@ def main():
 
     data = pd.read_csv("data/train.csv")
 
-    print(data.head(), data.shape, data.columns,sep = "\n\n")
-    print("\n")
     data.info()
-    print("\n")
-    print(data.isna().sum(),"\n")
-    print(data["Sex"].unique(), data["Embarked"].unique(), data["Pclass"].unique(),sep = "\n\n")
-    print("\n")
-    print(data["Sex"].value_counts(), data["Embarked"].value_counts(dropna=False), data["Pclass"].value_counts(), sep = "\n\n")
-    print("\n")
+    print(data.shape, "\n")
+    
+    print(data["Sex"].value_counts(dropna=False), data["Embarked"].value_counts(dropna=False), data["Pclass"].value_counts(), "\n", sep = "\n\n")
 
     seed = 88
-
     torch.manual_seed(seed)
-
-    shuffled_data = data.sample(frac=1,random_state=seed)
-
-    split_index = int(len(shuffled_data) * 0.8)
-
+    
     # Split training and test data
+    train_data, test_data = train_test_split(data, test_size=0.2, random_state=seed, stratify=data["Survived"])
 
-    train_data = shuffled_data.iloc[:split_index].copy()
-    test_data = shuffled_data.iloc[split_index:].copy()
-
-    print(train_data.shape,test_data.shape,sep = "\n\n")
-    print("\n")
-    print(train_data.isna().sum())
-    print("\n")
-
-    # Handle missing values
-
+    # Observe missing values
     age = train_data["Age"]
 
-    print("Age mean:", age.mean())
-    print("\n")
-    print("Age median:", age.median())
-    print("\n")
-    print("Age min:", age.min())
-    print("\n")
-    print("Age max", age.max())
-    print("\n")
+    print("Age mean:", age.mean(), "\t" 
+          "Age median:", age.median(), "\t"
+          "Age min:", age.min(), "\t"
+          "Age max", age.max(),"\n")
 
     age_median = age.median()
-
-    train_data["Age"] = train_data["Age"].fillna(age_median).astype(float)
-    test_data["Age"] = test_data["Age"].fillna(age_median).astype(float)
-
-    print(train_data["Age"].isna().sum(), test_data["Age"].isna().sum(),sep = "\n\n")
-    print("\n")
-
-
-    print(train_data["Embarked"].value_counts(dropna=False), train_data["Embarked"].mode(), sep = "\n\n")
-    print("\n")
-
     embarked_mode = train_data["Embarked"].mode().iloc[0]
-    train_data["Embarked"] = train_data["Embarked"].fillna(embarked_mode)
-    test_data["Embarked"] = test_data["Embarked"].fillna(embarked_mode)
 
-    print(embarked_mode, train_data["Embarked"].isna().sum(), test_data["Embarked"].isna().sum(), sep = "\n\n")
-    print("\n")
+    for _data in [train_data, test_data]:
+        #Handle missing values
+        _data["Age"] = _data["Age"].fillna(age_median).astype(float)
+        _data["Embarked"] = _data["Embarked"].fillna(embarked_mode)
+    
+        # Feature engineering
 
-    # Feature engineering
+        _data["Has_Cabin"] = _data["Cabin"].notna().astype(int)
 
-    train_data["Has_Cabin"] = train_data["Cabin"].notna().astype(int)
-    test_data["Has_Cabin"] = test_data["Cabin"].notna().astype(int)
-    print(train_data[["Cabin", "Has_Cabin"]].head(10))
-    print("\n")
+        _data["Sex"] = (_data["Sex"] == "female").astype(int)
+        _data["Embarked_S"] = (_data["Embarked"] == "S").astype(int)
+        _data["Embarked_C"] = (_data["Embarked"] == "C").astype(int)
+        _data["Embarked_Q"] = (_data["Embarked"] == "Q").astype(int)
 
-    train_data = train_data.drop(columns=["Cabin","PassengerId", "Name", "Ticket"])
-    test_data = test_data.drop(columns=["Cabin", "PassengerId", "Name", "Ticket"])
+        _data.drop(columns=["Cabin","PassengerId", "Name", "Ticket", "Embarked"], inplace=True)
+    
 
+    # Standardization
     X_train = train_data.drop(columns=["Survived"])
     y_train = train_data["Survived"]
-
     X_test = test_data.drop(columns=["Survived"])
     y_test = test_data["Survived"]
 
-    print(X_train.shape, y_train.shape, X_test.shape, y_test.shape, sep = "\n\n")
+    print(train_data[["Pclass", "Age", "Parch", "Fare", "SibSp"]].describe())
     print("\n")
-
-    for X_ in [X_train, X_test]:
-        X_["Sex"] = (X_["Sex"] == "female").astype(int)
-
-        X_["Embarked_S"] = (X_["Embarked"] == "S").astype(int)
-        X_["Embarked_C"] = (X_["Embarked"] == "C").astype(int)
-        X_["Embarked_Q"] = (X_["Embarked"] == "Q").astype(int)
-
-        X_.drop(columns=["Embarked"], inplace=True)
-
-    print(X_train.head(), X_train.shape, X_train.dtypes, sep = "\n\n")
-    print("\n")
-
-    print(X_train[["Pclass", "Age", "Parch", "Fare", "SibSp"]].describe())
-    print("\n")
-
-    # Standardization
 
     standardization_data = {}
 
@@ -248,29 +201,18 @@ def main():
         X_train[column] = (X_train[column] - column_mean) / column_std
         X_test[column] = (X_test[column] - column_mean) / column_std
 
-    print(X_train[["Age", "Parch", "Fare", "SibSp"]].describe())
-    print("\n")
-
     feature_order = list(X_train.columns)
 
     # Convert data to tensors
-
     X_train = X_train.astype(float)
     y_train = y_train.astype(float)
     X_test = X_test.astype(float)
     y_test = y_test.astype(float)
 
-    print("X_train data types:", X_train.dtypes, sep="\n")
-    print("\n")
-
     X_train_tensor = torch.tensor(X_train.to_numpy(), dtype=torch.float32)
     y_train_tensor = torch.tensor(y_train.to_numpy(), dtype=torch.float32).unsqueeze(1)
     X_test_tensor = torch.tensor(X_test.to_numpy(), dtype=torch.float32)
     y_test_tensor = torch.tensor(y_test.to_numpy(), dtype=torch.float32).unsqueeze(1)
-
-    for variables in [X_train_tensor, y_train_tensor, X_test_tensor, y_test_tensor]:
-        print("varibles:", variables.shape, variables.dtype, sep="\n\n")
-        print("\n")
 
     train_dataset =  TensorDataset(X_train_tensor, y_train_tensor)
     test_dataset = TensorDataset(X_test_tensor, y_test_tensor)
@@ -279,16 +221,13 @@ def main():
     train_eval_loader = DataLoader(train_dataset, batch_size=32, shuffle=False)
     test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
-    print(len(train_dataset), len(test_dataset),sep="\n\n")
-    print("\n")
-
     # Train model
 
     model = TitanicModel()
 
     criterion = nn.BCEWithLogitsLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-    num_epochs = 1200
+    num_epochs = 790
 
     train_loss_history = []
     train_accuracy_history = []
@@ -333,8 +272,6 @@ def main():
                 probability = torch.sigmoid(output)
                 predictions = (probability >= 0.5).float()
                 test_correct += (predictions == batch_y).sum().item()
-
-        
 
         train_accuracy = train_correct / len(train_dataset)
         train_accuracy_history.append(train_accuracy)
